@@ -1,7 +1,6 @@
 
 import os
 import json
-import re
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
@@ -21,12 +20,29 @@ app = FastAPI(
     version="3.0.0"
 )
 
+
+# ---------------------------------------------------------
+# CORS CONFIGURATION
+# Supports local development and the deployed frontend.
+# Set FRONTEND_URLS on Render after the frontend is deployed.
+# Multiple origins can be separated with commas.
+# ---------------------------------------------------------
+
+frontend_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("FRONTEND_URLS", "").split(",")
+    if origin.strip()
+]
+
+allowed_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    *frontend_origins
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173"
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -2,15 +2,17 @@
 import { useState, useEffect } from "react";
 import {
   Search, LayoutDashboard, History, Bookmark,
-  Settings, HelpCircle, Globe, Plus, X,
-  ArrowUpRight, ShieldCheck, Sparkles, Menu,
-  CheckCircle2, AlertTriangle, FileSearch,
-  ListChecks, Lightbulb, MessageCircleQuestion,
-  Brain
+  Settings, HelpCircle, ArrowUpRight, ShieldCheck,
+  Sparkles, Menu, CheckCircle2, AlertTriangle,
+  FileSearch, ListChecks, Lightbulb,
+  MessageCircleQuestion, Brain
 } from "lucide-react";
 import "./App.css";
 
-const API_URL = "http://127.0.0.1:8000";
+// Uses Render backend in production and localhost during development.
+const API_URL = (
+  import.meta.env.VITE_API_URL || "http://127.0.0.1:8000"
+).replace(/\/+$/, "");
 
 function SourceReferences({ ids, sources }) {
   if (!Array.isArray(ids) || ids.length === 0) return null;
@@ -214,8 +216,6 @@ function SourceQuality({ source }) {
 
 function App() {
   const [question, setQuestion] = useState("");
-  const [urls, setUrls] = useState([]);
-  const [urlInput, setUrlInput] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [backendStatus, setBackendStatus] = useState("checking");
   const [loading, setLoading] = useState(false);
@@ -228,7 +228,7 @@ function App() {
     async function checkBackend() {
       try {
         const response = await fetch(
-          API_URL + "/api/connection-test"
+          `${API_URL}/api/connection-test`
         );
 
         if (!response.ok) {
@@ -254,46 +254,19 @@ function App() {
     };
   }, []);
 
-  function addUrl() {
-    const value = urlInput.trim();
-
-    if (!value) return;
-
-    try {
-      const parsed = new URL(value);
-
-      if (!["http:", "https:"].includes(parsed.protocol)) {
-        alert("Please enter a valid HTTP or HTTPS URL.");
-        return;
-      }
-
-      if (urls.includes(value)) {
-        alert("This URL is already added.");
-        return;
-      }
-
-      setUrls((previous) => [...previous, value]);
-      setUrlInput("");
-    } catch {
-      alert("Please enter a valid URL, including https://");
-    }
-  }
-
-  function removeUrl(url) {
-    setUrls((previous) => previous.filter((item) => item !== url));
-  }
-
   async function startResearch() {
     const researchQuestion = question.trim();
 
-    if (!researchQuestion) {
-      setResearchError("Please enter a research question first.");
+    if (researchQuestion.length < 5) {
+      setResearchError(
+        "Please enter a research question with at least 5 characters."
+      );
       return;
     }
 
     if (backendStatus !== "online") {
       setResearchError(
-        "Backend is not connected. Please start the backend server."
+        "Research backend is unavailable. Please try again shortly."
       );
       return;
     }
@@ -303,14 +276,14 @@ function App() {
     setResearchResults(null);
 
     try {
-      const response = await fetch(API_URL + "/api/research", {
+      const response = await fetch(`${API_URL}/api/research`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
           question: researchQuestion,
-          sources: urls
+          sources: []
         })
       });
 
@@ -334,8 +307,6 @@ function App() {
 
   function startNewInvestigation() {
     setQuestion("");
-    setUrls([]);
-    setUrlInput("");
     setResearchResults(null);
     setResearchError("");
     setMenuOpen(false);
@@ -358,7 +329,8 @@ function App() {
         </div>
 
         <button className="new-research" onClick={startNewInvestigation}>
-          <Plus size={18} /> New investigation
+          <span><Search size={18} /></span>
+          New investigation
         </button>
 
         <p className="nav-label">WORKSPACE</p>
@@ -387,7 +359,10 @@ function App() {
         </nav>
 
         <div className="sidebar-bottom">
-          <div className={"status-dot " + (backendStatus === "online" ? "connected" : "")}></div>
+          <div className={
+            "status-dot " +
+            (backendStatus === "online" ? "connected" : "")
+          }></div>
           <span>Research engine setup</span>
           <span className="setup-badge">
             {backendStatus === "online"
@@ -414,7 +389,10 @@ function App() {
 
           <div className="topbar-right">
             <span className="system-status">
-              <span className={"status-dot " + (backendStatus === "online" ? "connected" : "")}></span>
+              <span className={
+                "status-dot " +
+                (backendStatus === "online" ? "connected" : "")
+              }></span>
               {backendStatus === "online"
                 ? "Backend connected"
                 : backendStatus === "checking"
@@ -455,50 +433,31 @@ function App() {
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             placeholder="Example: Compare the environmental impact of electric vehicles and petrol cars. What information is missing from current research?"
+            maxLength={1000}
           />
 
           <div className="input-footer">
-            <span>{question.length} characters</span>
+            <span>{question.length} / 1000 characters</span>
             <span>Be specific for better results</span>
           </div>
 
-          <div className="url-section">
-            <div className="url-heading">
-              <div>
-                <Globe size={17} />
-                <strong>Add source URLs</strong>
-              </div>
-              <span>OPTIONAL</span>
-            </div>
-
-            <div className="url-input-row">
-              <input
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addUrl()}
-                placeholder="https://example.com/article"
-              />
-
-              <button className="add-url-button" onClick={addUrl}>
-                <Plus size={17} /> Add
-              </button>
-            </div>
-
-            {urls.length > 0 && (
-              <div className="url-list">
-                {urls.map((url) => (
-                  <div className="url-chip" key={url}>
-                    <span>{url}</span>
-                    <button
-                      onClick={() => removeUrl(url)}
-                      aria-label="Remove URL"
-                    >
-                      <X size={15} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+          <div style={{
+            marginTop: "18px",
+            padding: "12px 14px",
+            background: "#f5f8ff",
+            border: "1px solid #e4ebfa",
+            borderRadius: "8px",
+            color: "#526078",
+            fontSize: "12px",
+            lineHeight: 1.6
+          }}>
+            <ShieldCheck size={14} style={{
+              display: "inline",
+              verticalAlign: "middle",
+              marginRight: "6px"
+            }} />
+            DarkSpot discovers web sources automatically. Direct URL
+            submission is not available in this prototype yet.
           </div>
 
           <button
@@ -513,7 +472,7 @@ function App() {
 
           <p className="privacy-note">
             <ShieldCheck size={14} />
-            Your research sources will remain traceable.
+            Retrieved sources are displayed with links for review.
           </p>
 
           {researchError && (
@@ -540,7 +499,7 @@ function App() {
             <strong>Researching your question...</strong>
             <p style={{ color: "#667085", fontSize: "14px" }}>
               Collecting web sources and preparing AI-assisted evidence analysis.
-              This may take a few seconds.
+              The first request may take longer if the backend is waking up.
             </p>
           </section>
         )}
@@ -570,7 +529,8 @@ function App() {
                   display: "flex",
                   alignItems: "center",
                   gap: "10px",
-                  marginBottom: "17px"
+                  marginBottom: "17px",
+                  flexWrap: "wrap"
                 }}>
                   <Brain size={22} color="#315fc5" />
                   <h2 style={{ margin: 0, fontSize: "21px" }}>
@@ -647,7 +607,7 @@ function App() {
                   subtitle="Differences that require further investigation"
                   icon={AlertTriangle}
                   items={analysis.potential_conflicts}
-                  emptyMessage="No potential conflicts were identified in the supplied source content."
+                  emptyMessage="No potential conflicts were identified in the retrieved source content."
                 >
                   {(analysis.potential_conflicts || []).map((item, index) => (
                     <div key={index} style={{
@@ -697,9 +657,9 @@ function App() {
                     }}>
                       <div style={{
                         display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        gap: "10px"
+                        flexDirection: "column",
+                        alignItems: "flex-start",
+                        gap: "8px"
                       }}>
                         <strong style={{ fontSize: "14px" }}>
                           {item.gap}
