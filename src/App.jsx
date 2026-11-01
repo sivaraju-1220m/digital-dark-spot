@@ -5,7 +5,7 @@ import {
   Settings, HelpCircle, ArrowUpRight, ShieldCheck,
   Sparkles, Menu, CheckCircle2, AlertTriangle,
   FileSearch, ListChecks, Lightbulb,
-  MessageCircleQuestion, Brain
+  MessageCircleQuestion, Brain, Trash2, Save
 } from "lucide-react";
 import "./App.css";
 
@@ -221,6 +221,22 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [researchResults, setResearchResults] = useState(null);
   const [researchError, setResearchError] = useState("");
+  const [view, setView] = useState("overview");
+  const [history, setHistory] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("darkspot-history") || "[]"); } catch { return []; }
+  });
+  const [savedResearch, setSavedResearch] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("darkspot-saved") || "[]"); } catch { return []; }
+  });
+  const [expandedSources, setExpandedSources] = useState({});
+  const [settings, setSettings] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("darkspot-settings")) || { autoSaveHistory: true, confirmClear: true }; }
+    catch { return { autoSaveHistory: true, confirmClear: true }; }
+  });
+
+  useEffect(() => { localStorage.setItem("darkspot-history", JSON.stringify(history)); }, [history]);
+  useEffect(() => { localStorage.setItem("darkspot-saved", JSON.stringify(savedResearch)); }, [savedResearch]);
+  useEffect(() => { localStorage.setItem("darkspot-settings", JSON.stringify(settings)); }, [settings]);
 
   useEffect(() => {
     let active = true;
@@ -238,7 +254,7 @@ function App() {
         const data = await response.json();
 
         if (active) {
-          setBackendStatus(data.connected ? "online" : "offline");
+          setBackendStatus(data.connected === true ? "online" : "offline");
         }
       } catch {
         if (active) {
@@ -296,6 +312,10 @@ function App() {
       }
 
       setResearchResults(data);
+      if (settings.autoSaveHistory) {
+        const entry = { id: String(Date.now()), question: data.question || researchQuestion, result: data, createdAt: new Date().toISOString() };
+        setHistory((items) => [entry, ...items].slice(0, 50));
+      }
     } catch (error) {
       setResearchError(
         error.message || "Unable to complete the research request."
@@ -305,10 +325,32 @@ function App() {
     }
   }
 
+  function openResearch(entry) {
+    setQuestion(entry.question || entry.result?.question || "");
+    setResearchResults(entry.result || null);
+    setResearchError("");
+    setExpandedSources({});
+    setView("overview");
+    setMenuOpen(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function saveCurrentResearch() {
+    if (!researchResults) return;
+    setSavedResearch((items) => [{
+      id: String(Date.now()),
+      question: researchResults.question || question,
+      result: researchResults,
+      createdAt: new Date().toISOString()
+    }, ...items]);
+  }
+
   function startNewInvestigation() {
     setQuestion("");
     setResearchResults(null);
     setResearchError("");
+    setView("overview");
+    setExpandedSources({});
     setMenuOpen(false);
   }
 
@@ -336,26 +378,16 @@ function App() {
         <p className="nav-label">WORKSPACE</p>
 
         <nav>
-          <a className="nav-item active" href="#overview">
-            <LayoutDashboard size={18} /> Overview
-          </a>
-          <a className="nav-item" href="#history">
-            <History size={18} /> History
-          </a>
-          <a className="nav-item" href="#saved">
-            <Bookmark size={18} /> Saved research
-          </a>
+          <button className={"nav-item " + (view === "overview" ? "active" : "")} onClick={() => { setView("overview"); setMenuOpen(false); }}><LayoutDashboard size={18} /> Overview</button>
+          <button className={"nav-item " + (view === "history" ? "active" : "")} onClick={() => { setView("history"); setMenuOpen(false); }}><History size={18} /> History</button>
+          <button className={"nav-item " + (view === "saved" ? "active" : "")} onClick={() => { setView("saved"); setMenuOpen(false); }}><Bookmark size={18} /> Saved research</button>
         </nav>
 
         <p className="nav-label tools-label">TOOLS</p>
 
         <nav>
-          <a className="nav-item" href="#settings">
-            <Settings size={18} /> Settings
-          </a>
-          <a className="nav-item" href="#help">
-            <HelpCircle size={18} /> Help center
-          </a>
+          <button className={"nav-item " + (view === "settings" ? "active" : "")} onClick={() => { setView("settings"); setMenuOpen(false); }}><Settings size={18} /> Settings</button>
+          <button className={"nav-item " + (view === "help" ? "active" : "")} onClick={() => { setView("help"); setMenuOpen(false); }}><HelpCircle size={18} /> Help center</button>
         </nav>
 
         <div className="sidebar-bottom">
@@ -384,7 +416,7 @@ function App() {
           </button>
 
           <div className="breadcrumb">
-            Workspace <span>/</span> Overview
+            Workspace <span>/</span> {({ overview: "Overview", history: "History", saved: "Saved research", settings: "Settings", help: "Help center" })[view]}
           </div>
 
           <div className="topbar-right">
@@ -403,6 +435,7 @@ function App() {
           </div>
         </header>
 
+        {view === "overview" ? (<>
         <section className="welcome-section">
           <div className="eyebrow">
             <Sparkles size={14} /> INTELLIGENCE STARTS HERE
@@ -432,6 +465,15 @@ function App() {
           <textarea
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+
+                if (!loading) {
+                  startResearch();
+                }
+              }
+            }}
             placeholder="Example: Compare the environmental impact of electric vehicles and petrol cars. What information is missing from current research?"
             maxLength={1000}
           />
@@ -508,7 +550,10 @@ function App() {
           <section style={{ marginTop: "30px" }}>
             <div className="section-heading">
               <h2>Research results</h2>
-              <span>{sources.length} SOURCES FOUND</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <span>{sources.length} SOURCES FOUND</span>
+                <button type="button" className="research-button" style={{ width: "auto", margin: 0, padding: "9px 13px", fontSize: 12 }} onClick={saveCurrentResearch}><Save size={15} /> Save research</button>
+              </div>
             </div>
 
             <div style={{
@@ -525,231 +570,332 @@ function App() {
 
             {researchResults.analysis_status === "success" && analysis ? (
               <div style={{ marginBottom: "28px" }}>
-                <div style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  marginBottom: "17px",
-                  flexWrap: "wrap"
-                }}>
-                  <Brain size={22} color="#315fc5" />
-                  <h2 style={{ margin: 0, fontSize: "21px" }}>
-                    DarkSpot intelligence analysis
-                  </h2>
-                  <span style={{
-                    background: "#e9f8ef",
-                    color: "#217346",
-                    padding: "5px 9px",
-                    borderRadius: "6px",
-                    fontSize: "10px",
-                    fontWeight: 700
-                  }}>
-                    AI ANALYZED
-                  </span>
-                </div>
 
-                <AnalysisSection
-                  title="Key claims"
-                  subtitle="Claims identified in the retrieved sources"
-                  icon={Lightbulb}
-                  items={analysis.key_claims}
-                  emptyMessage="No supported claims were identified."
-                >
-                  {(analysis.key_claims || []).map((item, index) => (
-                    <div key={index} style={{
-                      padding: "14px 0",
-                      borderBottom: index !== analysis.key_claims.length - 1
-                        ? "1px solid #edf0f5" : "none"
-                    }}>
-                      <strong style={{ fontSize: "14px", lineHeight: 1.6 }}>
-                        {item.claim}
-                      </strong>
+                {/* QUICK OVERVIEW */}
+                <section style={{
+                  background: "#ffffff",
+                  padding: "22px",
+                  borderRadius: "12px",
+                  border: "1px solid #e7eaf0",
+                  marginBottom: "18px"
+                }}>
+                  <div style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "9px",
+                    marginBottom: "12px"
+                  }}>
+                    <Sparkles size={19} color="#315fc5" />
+                    <h3 style={{ margin: 0, fontSize: "18px" }}>
+                      Quick overview
+                    </h3>
+                  </div>
+
+                  <p style={{
+                    color: "#526078",
+                    fontSize: "14px",
+                    lineHeight: 1.7,
+                    margin: "0 0 15px"
+                  }}>
+                    DarkSpot examined {sources.length} retrieved sources and identified
+                    {(analysis.key_claims || []).length} key claims,
+                    {(analysis.evidence_gaps || []).length} evidence gaps, and
+                    {(analysis.potential_conflicts || []).length} potential conflicts.
+                    These are preliminary findings from the retrieved material, not
+                    independently verified conclusions.
+                  </p>
+
+                  {(analysis.key_claims || []).length > 0 && (
+                    <div style={{ marginBottom: "13px" }}>
+                      <strong style={{ fontSize: "13px" }}>Main finding</strong>
                       <p style={{
-                        color: "#667085",
+                        color: "#526078",
                         fontSize: "13px",
                         lineHeight: 1.6,
-                        margin: "7px 0 0"
+                        margin: "5px 0 0"
                       }}>
-                        {item.support}
+                        {analysis.key_claims[0].claim}
                       </p>
-                      <SourceReferences ids={item.source_ids} sources={sources} />
                     </div>
-                  ))}
-                </AnalysisSection>
+                  )}
 
-                <AnalysisSection
-                  title="Agreements across sources"
-                  subtitle="Findings supported by multiple sources"
-                  icon={CheckCircle2}
-                  items={analysis.agreements}
-                  emptyMessage="No cross-source agreements were identified."
-                >
-                  {(analysis.agreements || []).map((item, index) => (
-                    <div key={index} style={{
-                      padding: "13px 0",
-                      borderBottom: index !== analysis.agreements.length - 1
-                        ? "1px solid #edf0f5" : "none"
-                    }}>
-                      <p style={{
-                        margin: 0,
-                        fontSize: "14px",
-                        lineHeight: 1.7
-                      }}>
-                        {item.finding}
-                      </p>
-                      <SourceReferences ids={item.source_ids} sources={sources} />
-                    </div>
-                  ))}
-                </AnalysisSection>
-
-                <AnalysisSection
-                  title="Potential conflicts"
-                  subtitle="Differences that require further investigation"
-                  icon={AlertTriangle}
-                  items={analysis.potential_conflicts}
-                  emptyMessage="No potential conflicts were identified in the retrieved source content."
-                >
-                  {(analysis.potential_conflicts || []).map((item, index) => (
-                    <div key={index} style={{
-                      padding: "14px 0",
-                      borderBottom: index !== analysis.potential_conflicts.length - 1
-                        ? "1px solid #edf0f5" : "none"
-                    }}>
-                      <strong style={{ fontSize: "14px" }}>
-                        {item.issue}
+                  {(analysis.evidence_gaps || []).length > 0 && (
+                    <div style={{ marginBottom: "13px" }}>
+                      <strong style={{ fontSize: "13px" }}>
+                        Important missing evidence
                       </strong>
                       <p style={{
                         color: "#526078",
                         fontSize: "13px",
-                        lineHeight: 1.7
+                        lineHeight: 1.6,
+                        margin: "5px 0 0"
                       }}>
-                        {item.explanation}
+                        {analysis.evidence_gaps[0].gap}
                       </p>
-                      <div style={{
-                        background: "#fff8ed",
-                        padding: "11px",
-                        borderRadius: "8px",
-                        fontSize: "13px",
-                        lineHeight: 1.6
-                      }}>
-                        <strong>What needs verification?</strong>
-                        <p style={{ margin: "5px 0 0" }}>
-                          {item.verification_needed}
-                        </p>
-                      </div>
-                      <SourceReferences ids={item.source_ids} sources={sources} />
                     </div>
-                  ))}
-                </AnalysisSection>
+                  )}
 
-                <AnalysisSection
-                  title="Evidence gaps"
-                  subtitle="Information missing from the retrieved evidence"
-                  icon={FileSearch}
-                  items={analysis.evidence_gaps}
-                  emptyMessage="No specific evidence gaps were identified."
-                >
-                  {(analysis.evidence_gaps || []).map((item, index) => (
-                    <div key={index} style={{
-                      padding: "13px 0",
-                      borderBottom: index !== analysis.evidence_gaps.length - 1
-                        ? "1px solid #edf0f5" : "none"
-                    }}>
-                      <div style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "flex-start",
-                        gap: "8px"
-                      }}>
-                        <strong style={{ fontSize: "14px" }}>
-                          {item.gap}
-                        </strong>
-                        <Priority value={item.importance} />
-                      </div>
+                  {(analysis.potential_conflicts || []).length > 0 && (
+                    <div>
+                      <strong style={{ fontSize: "13px" }}>
+                        Needs further checking
+                      </strong>
                       <p style={{
-                        color: "#667085",
+                        color: "#526078",
                         fontSize: "13px",
                         lineHeight: 1.6,
-                        marginBottom: 0
+                        margin: "5px 0 0"
                       }}>
-                        {item.reason}
+                        {analysis.potential_conflicts[0].issue}
                       </p>
                     </div>
-                  ))}
-                </AnalysisSection>
+                  )}
+                </section>
 
-                <AnalysisSection
-                  title="Unanswered questions"
-                  subtitle="Questions that need further research"
-                  icon={MessageCircleQuestion}
-                  items={analysis.unanswered_questions}
-                  emptyMessage="No additional questions were generated."
-                >
-                  <ul style={{
-                    paddingLeft: "20px",
-                    margin: 0,
-                    color: "#526078",
-                    fontSize: "14px",
-                    lineHeight: 1.9
+                {/* EXPANDABLE FULL ANALYSIS */}
+                <details style={{
+                  background: "#ffffff",
+                  border: "1px solid #e7eaf0",
+                  borderRadius: "12px",
+                  padding: "16px 20px"
+                }}>
+                  <summary style={{
+                    cursor: "pointer",
+                    color: "#315fc5",
+                    fontWeight: 700,
+                    fontSize: "14px"
                   }}>
-                    {(analysis.unanswered_questions || []).map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                </AnalysisSection>
+                    Explore full analysis
+                  </summary>
 
-                <AnalysisSection
-                  title="Verification checklist"
-                  subtitle="Suggested next steps to verify the findings"
-                  icon={ListChecks}
-                  items={analysis.verification_checklist}
-                  emptyMessage="No verification tasks were generated."
-                >
-                  {(analysis.verification_checklist || []).map((item, index) => (
-                    <div key={index} style={{
+                  <div style={{ marginTop: "20px" }}>
+                    <div style={{
                       display: "flex",
-                      alignItems: "flex-start",
-                      justifyContent: "space-between",
-                      gap: "12px",
-                      padding: "12px 0",
-                      borderBottom: index !== analysis.verification_checklist.length - 1
-                        ? "1px solid #edf0f5" : "none"
+                      alignItems: "center",
+                      gap: "10px",
+                      marginBottom: "17px",
+                      flexWrap: "wrap"
                     }}>
-                      <div style={{
-                        display: "flex",
-                        gap: "10px",
-                        fontSize: "14px",
-                        lineHeight: 1.6
+                      <Brain size={22} color="#315fc5" />
+                      <h2 style={{ margin: 0, fontSize: "21px" }}>
+                        DarkSpot intelligence analysis
+                      </h2>
+                      <span style={{
+                        background: "#e9f8ef",
+                        color: "#217346",
+                        padding: "5px 9px",
+                        borderRadius: "6px",
+                        fontSize: "10px",
+                        fontWeight: 700
                       }}>
-                        <span style={{ color: "#315fc5", fontWeight: 700 }}>
-                          {index + 1}.
-                        </span>
-                        {item.task}
-                      </div>
-                      <Priority value={item.priority} />
+                        AI ANALYZED
+                      </span>
                     </div>
-                  ))}
-                </AnalysisSection>
 
-                <AnalysisSection
-                  title="Analysis limitations"
-                  subtitle="Important boundaries of this analysis"
-                  icon={ShieldCheck}
-                  items={analysis.limitations}
-                  emptyMessage="No limitations were returned."
-                >
-                  <ul style={{
-                    paddingLeft: "20px",
-                    margin: 0,
-                    color: "#667085",
-                    fontSize: "13px",
-                    lineHeight: 1.8
-                  }}>
-                    {(analysis.limitations || []).map((item, index) => (
-                      <li key={index}>{item}</li>
-                    ))}
-                  </ul>
-                </AnalysisSection>
+                    <AnalysisSection
+                      title="Key claims"
+                      subtitle="Claims identified in the retrieved sources"
+                      icon={Lightbulb}
+                      items={analysis.key_claims}
+                      emptyMessage="No supported claims were identified."
+                    >
+                      {(analysis.key_claims || []).map((item, index) => (
+                        <div key={index} style={{
+                          padding: "14px 0",
+                          borderBottom: index !== analysis.key_claims.length - 1
+                            ? "1px solid #edf0f5" : "none"
+                        }}>
+                          <strong style={{ fontSize: "14px", lineHeight: 1.6 }}>
+                            {item.claim}
+                          </strong>
+                          <p style={{
+                            color: "#667085",
+                            fontSize: "13px",
+                            lineHeight: 1.6,
+                            margin: "7px 0 0"
+                          }}>
+                            {item.support}
+                          </p>
+                          <SourceReferences ids={item.source_ids} sources={sources} />
+                        </div>
+                      ))}
+                    </AnalysisSection>
+
+                    <AnalysisSection
+                      title="Agreements across sources"
+                      subtitle="Findings supported by multiple sources"
+                      icon={CheckCircle2}
+                      items={analysis.agreements}
+                      emptyMessage="No cross-source agreements were identified."
+                    >
+                      {(analysis.agreements || []).map((item, index) => (
+                        <div key={index} style={{
+                          padding: "13px 0",
+                          borderBottom: index !== analysis.agreements.length - 1
+                            ? "1px solid #edf0f5" : "none"
+                        }}>
+                          <p style={{
+                            margin: 0,
+                            fontSize: "14px",
+                            lineHeight: 1.7
+                          }}>
+                            {item.finding}
+                          </p>
+                          <SourceReferences ids={item.source_ids} sources={sources} />
+                        </div>
+                      ))}
+                    </AnalysisSection>
+
+                    <AnalysisSection
+                      title="Potential conflicts"
+                      subtitle="Differences that require further investigation"
+                      icon={AlertTriangle}
+                      items={analysis.potential_conflicts}
+                      emptyMessage="No potential conflicts were identified in the retrieved source content."
+                    >
+                      {(analysis.potential_conflicts || []).map((item, index) => (
+                        <div key={index} style={{
+                          padding: "14px 0",
+                          borderBottom: index !== analysis.potential_conflicts.length - 1
+                            ? "1px solid #edf0f5" : "none"
+                        }}>
+                          <strong style={{ fontSize: "14px" }}>
+                            {item.issue}
+                          </strong>
+                          <p style={{
+                            color: "#526078",
+                            fontSize: "13px",
+                            lineHeight: 1.7
+                          }}>
+                            {item.explanation}
+                          </p>
+                          <div style={{
+                            background: "#fff8ed",
+                            padding: "11px",
+                            borderRadius: "8px",
+                            fontSize: "13px",
+                            lineHeight: 1.6
+                          }}>
+                            <strong>What needs verification?</strong>
+                            <p style={{ margin: "5px 0 0" }}>
+                              {item.verification_needed}
+                            </p>
+                          </div>
+                          <SourceReferences ids={item.source_ids} sources={sources} />
+                        </div>
+                      ))}
+                    </AnalysisSection>
+
+                    <AnalysisSection
+                      title="Evidence gaps"
+                      subtitle="Information missing from the retrieved evidence"
+                      icon={FileSearch}
+                      items={analysis.evidence_gaps}
+                      emptyMessage="No specific evidence gaps were identified."
+                    >
+                      {(analysis.evidence_gaps || []).map((item, index) => (
+                        <div key={index} style={{
+                          padding: "13px 0",
+                          borderBottom: index !== analysis.evidence_gaps.length - 1
+                            ? "1px solid #edf0f5" : "none"
+                        }}>
+                          <div style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "flex-start",
+                            gap: "8px"
+                          }}>
+                            <strong style={{ fontSize: "14px" }}>
+                              {item.gap}
+                            </strong>
+                            <Priority value={item.importance} />
+                          </div>
+                          <p style={{
+                            color: "#667085",
+                            fontSize: "13px",
+                            lineHeight: 1.6,
+                            marginBottom: 0
+                          }}>
+                            {item.reason}
+                          </p>
+                        </div>
+                      ))}
+                    </AnalysisSection>
+
+                    <AnalysisSection
+                      title="Unanswered questions"
+                      subtitle="Questions that need further research"
+                      icon={MessageCircleQuestion}
+                      items={analysis.unanswered_questions}
+                      emptyMessage="No additional questions were generated."
+                    >
+                      <ul style={{
+                        paddingLeft: "20px",
+                        margin: 0,
+                        color: "#526078",
+                        fontSize: "14px",
+                        lineHeight: 1.9
+                      }}>
+                        {(analysis.unanswered_questions || []).map((item, index) => (
+                          <li key={index}>{item}</li>
+                        ))}
+                      </ul>
+                    </AnalysisSection>
+
+                    <AnalysisSection
+                      title="Verification checklist"
+                      subtitle="Suggested next steps to verify the findings"
+                      icon={ListChecks}
+                      items={analysis.verification_checklist}
+                      emptyMessage="No verification tasks were generated."
+                    >
+                      {(analysis.verification_checklist || []).map((item, index) => (
+                        <div key={index} style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          justifyContent: "space-between",
+                          gap: "12px",
+                          padding: "12px 0",
+                          borderBottom: index !== analysis.verification_checklist.length - 1
+                            ? "1px solid #edf0f5" : "none"
+                        }}>
+                          <div style={{
+                            display: "flex",
+                            gap: "10px",
+                            fontSize: "14px",
+                            lineHeight: 1.6
+                          }}>
+                            <span style={{ color: "#315fc5", fontWeight: 700 }}>
+                              {index + 1}.
+                            </span>
+                            {item.task}
+                          </div>
+                          <Priority value={item.priority} />
+                        </div>
+                      ))}
+                    </AnalysisSection>
+
+                    <AnalysisSection
+                      title="Analysis limitations"
+                      subtitle="Important boundaries of this analysis"
+                      icon={ShieldCheck}
+                      items={analysis.limitations}
+                      emptyMessage="No limitations were returned."
+                    >
+                      <ul style={{
+                        paddingLeft: "20px",
+                        margin: 0,
+                        color: "#667085",
+                        fontSize: "13px",
+                        lineHeight: 1.8
+                      }}>
+                        {(analysis.limitations || []).map((item, index) => (
+                          <li key={index}>{item}</li>
+                        ))}
+                      </ul>
+                    </AnalysisSection>
+                  </div>
+                </details>
               </div>
             ) : (
               <div style={{
@@ -824,14 +970,18 @@ function App() {
                       {source.title || "Untitled source"}
                     </h3>
 
-                    <p style={{
-                      color: "#526078",
-                      fontSize: "14px",
-                      lineHeight: 1.7,
-                      margin: "0 0 14px"
-                    }}>
-                      {source.content || "No preview available."}
+                    <p style={{ color: "#526078", fontSize: 14, lineHeight: 1.7, margin: "0 0 8px", whiteSpace: "pre-wrap" }}>
+                      {(() => {
+                        const content = source.content || "No preview available.";
+                        const expanded = !!expandedSources[source.id || index];
+                        return content.length > 420 && !expanded ? `${content.slice(0, 420).trimEnd()}…` : content;
+                      })()}
                     </p>
+                    {(source.content || "").length > 420 && (
+                      <button type="button" onClick={() => setExpandedSources((old) => ({ ...old, [source.id || index]: !old[source.id || index] }))} aria-expanded={!!expandedSources[source.id || index]} style={{ border: 0, background: "transparent", color: "#2563eb", padding: "4px 0 12px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                        {expandedSources[source.id || index] ? "Show less" : "Explore more"}
+                      </button>
+                    )}
 
                     {source.url && (
                       <a
@@ -927,6 +1077,47 @@ function App() {
           <span>Digital Dark Spot</span>
           <span>Research intelligence workspace · Prototype</span>
         </footer>
+          </>
+        ) : view === "history" ? (
+          <section className="welcome-section">
+            <div className="eyebrow"><History size={14} /> YOUR WORKSPACE</div>
+            <h1>Research <span>history.</span></h1>
+            <p className="welcome-description">Reopen investigations completed on this device.</p>
+            <button className="nav-item" type="button" style={{ margin: "18px 0" }} onClick={() => { if (!settings.confirmClear || window.confirm("Clear all research history?")) setHistory([]); }}><Trash2 size={16} /> Clear history</button>
+            {history.length === 0 ? <p>No research history yet.</p> : <div style={{ display: "grid", gap: 12 }}>{history.map((entry) => <article key={entry.id} style={{ background: "#fff", padding: 18, border: "1px solid #e7eaf0", borderRadius: 12 }}><strong>{entry.question}</strong><p style={{ color: "#8290a5", fontSize: 12 }}>{new Date(entry.createdAt).toLocaleString()}</p><button className="research-button" style={{ width: "auto", padding: "9px 14px" }} onClick={() => openResearch(entry)}>Open investigation <ArrowUpRight size={15} /></button></article>)}</div>}
+          </section>
+        ) : view === "saved" ? (
+          <section className="welcome-section">
+            <div className="eyebrow"><Bookmark size={14} /> YOUR LIBRARY</div>
+            <h1>Saved <span>research.</span></h1>
+            <p className="welcome-description">Keep important investigations for quick access.</p>
+            {savedResearch.length === 0 ? <p>No saved investigations yet. Open a result and select “Save research”.</p> : <div style={{ display: "grid", gap: 12, marginTop: 22 }}>{savedResearch.map((entry) => <article key={entry.id} style={{ background: "#fff", padding: 18, border: "1px solid #e7eaf0", borderRadius: 12 }}><strong>{entry.question}</strong><p style={{ color: "#8290a5", fontSize: 12 }}>{new Date(entry.createdAt).toLocaleString()}</p><div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}><button className="research-button" style={{ width: "auto", padding: "9px 14px" }} onClick={() => openResearch(entry)}>Open research <ArrowUpRight size={15} /></button><button className="nav-item" type="button" onClick={() => setSavedResearch((items) => items.filter((item) => item.id !== entry.id))}><Trash2 size={15} /> Remove</button></div></article>)}</div>}
+          </section>
+        ) : view === "settings" ? (
+          <section className="welcome-section">
+            <div className="eyebrow"><Settings size={14} /> PREFERENCES</div>
+            <h1>Workspace <span>settings.</span></h1>
+            <p className="welcome-description">Preferences are stored in this browser on this device.</p>
+            <div style={{ background: "#fff", border: "1px solid #e7eaf0", borderRadius: 12, padding: 20, marginTop: 22 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", cursor: "pointer" }}><input type="checkbox" checked={settings.autoSaveHistory} onChange={(e) => setSettings((old) => ({ ...old, autoSaveHistory: e.target.checked }))} /><span><strong>Automatically save research history</strong><br /><small>Store completed investigations in History.</small></span></label>
+              <hr />
+              <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", cursor: "pointer" }}><input type="checkbox" checked={settings.confirmClear} onChange={(e) => setSettings((old) => ({ ...old, confirmClear: e.target.checked }))} /><span><strong>Confirm before clearing history</strong><br /><small>Ask before deleting all history entries.</small></span></label>
+              <p style={{ color: "#8290a5", fontSize: 12 }}>History, saved research and preferences are local to this browser; they are not synced to an account.</p>
+            </div>
+          </section>
+        ) : (
+          <section className="welcome-section">
+            <div className="eyebrow"><HelpCircle size={14} /> DARKSPOT GUIDE</div>
+            <h1>Help <span>center.</span></h1>
+            <p className="welcome-description">A quick guide to the research workspace.</p>
+            <div style={{ background: "#fff", border: "1px solid #e7eaf0", borderRadius: 12, padding: 20, marginTop: 22, lineHeight: 1.8 }}>
+              <h3>Start an investigation</h3><p>Enter a specific question and press Enter or select Prepare investigation. Use Shift+Enter for a new line.</p>
+              <h3>Review sources</h3><p>Select Explore more to expand retrieved content, or Open original source to visit the website.</p>
+              <h3>Save and revisit</h3><p>Completed investigations appear in History when automatic saving is enabled. Select Save research to add a result to Saved research.</p>
+              <h3>About the analysis</h3><p>AI-assisted findings are preliminary. Review original sources and independently verify important claims.</p>
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );

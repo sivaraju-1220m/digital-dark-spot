@@ -581,4 +581,24 @@ nav {
 }.url-heading div strong {
   font-size: 18px;
   font-weight: 700;
+}/* Fix sidebar navigation buttons */
+button.nav-item {
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  color: #aebbd0;
+}
+
+button.nav-item.active {
+  background: #233653;
+  color: #ffffff;
+  border-color: transparent;
+}
+
+button.nav-item:hover {
+  background: #1c2b43;
+  color: #ffffff;
 }
