@@ -1,4 +1,3 @@
-
 import os
 import json
 from urllib.parse import urlparse
@@ -23,27 +22,15 @@ app = FastAPI(
 
 # ---------------------------------------------------------
 # CORS CONFIGURATION
-# Supports local development and the deployed frontend.
-# Set FRONTEND_URLS on Render after the frontend is deployed.
-# Multiple origins can be separated with commas.
+# Public hackathon demo: allow browser requests from any
+# frontend origin. No cookies or credentials are required.
+# API keys remain on the backend.
 # ---------------------------------------------------------
-
-frontend_origins = [
-    origin.strip().rstrip("/")
-    for origin in os.getenv("FRONTEND_URLS", "").split(",")
-    if origin.strip()
-]
-
-allowed_origins = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    *frontend_origins
-]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -242,6 +229,7 @@ def valid_source_ids(ids, source_map):
         return []
 
     result = []
+
     for source_id in ids:
         if (
             isinstance(source_id, str)
@@ -286,6 +274,7 @@ def validate_analysis(analysis, sources):
             continue
 
         ids = valid_source_ids(claim.get("source_ids"), source_map)
+
         if not ids:
             continue
 
@@ -322,6 +311,7 @@ def validate_analysis(analysis, sources):
             publisher_domain(source_map[source_id]["url"])
             for source_id in eligible_ids
         }
+
         domains.discard(None)
 
         if len(eligible_ids) < 2 or len(domains) < 2:
@@ -341,6 +331,7 @@ def validate_analysis(analysis, sources):
             continue
 
         ids = valid_source_ids(conflict.get("source_ids"), source_map)
+
         if len(ids) < 2:
             continue
 
@@ -629,6 +620,7 @@ def research(request: ResearchRequest):
 
     except Exception as exc:
         print("Tavily search error:", str(exc))
+
         raise HTTPException(
             status_code=502,
             detail=(
@@ -648,6 +640,7 @@ def research(request: ResearchRequest):
                 request.question,
                 formatted_sources
             )
+
             analysis_status = "success"
 
         except json.JSONDecodeError:
@@ -657,10 +650,12 @@ def research(request: ResearchRequest):
 
         except Exception as exc:
             print("Gemini analysis error:", str(exc))
+
             analysis_message = (
                 "AI analysis is temporarily unavailable. "
                 "Your web search results are still available."
             )
+
     else:
         analysis_message = (
             "No search results were found to analyze."
